@@ -1,0 +1,43 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust stable toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+      - name: Check formatting
+        run: cargo +stable fmt --all --check
+      - name: Install stable toolchain
+        run: rustup toolchain install stable --profile minimal
+      - name: Test userspace crates
+        run: cargo +stable test -p natto64-xlat -p natto64-abi -p natto64
+      - name: Test OpenTelemetry metrics example
+        run: cargo +stable test -p natto64-opentelemetry-example
+  build-example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust stable toolchain
+        run: rustup toolchain install stable --profile minimal
+      - name: Build simple example
+        run: cargo +stable build -p natto64-example
+      - name: Build OpenTelemetry metrics example
+        run: cargo +stable build -p natto64-opentelemetry-example
+  build-ebpf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust nightly toolchain
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup component add rust-src --toolchain nightly
+      - name: Install bpf-linker
+        run: cargo +nightly install bpf-linker --locked
+      - name: Build natto64-ebpf
+        run: cargo +nightly -Z build-std=core build -p natto64-ebpf --target bpfel-unknown-none --release

@@ -1,0 +1,16 @@
+[package]
+name = "natto64-xlat"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/natto64-xlat"
+description = "Allocation-free packet, header, checksum, and wire-format helpers for NAT64 translation."
+keywords = ["nat64", "networking", "ipv6", "ipv4", "no-std"]
+categories = ["network-programming", "no-std"]
+rust-version.workspace = true
+
+[lib]
+path = "src/lib.rs"

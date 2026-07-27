@@ -1,0 +1,20 @@
+[package]
+name = "natto64"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/natto64"
+description = "Builder-first userspace API for the natto64 eBPF dataplane."
+keywords = ["nat64", "networking", "ipv6", "ipv4", "ebpf"]
+categories = ["network-programming"]
+rust-version.workspace = true
+
+[dependencies]
+aya = { version = "0.14.0", git = "https://github.com/aya-rs/aya", rev = "412fe810cb9d933a3db42d7b427ad8290f969c3d", default-features = false }
+natto64-abi = { version = "0.1.0", path = "../natto64-abi", features = ["server"] }
+
+[lib]
+path = "src/lib.rs"
