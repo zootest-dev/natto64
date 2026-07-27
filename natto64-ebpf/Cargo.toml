@@ -1,0 +1,25 @@
+[package]
+name = "natto64-ebpf"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/natto64-ebpf"
+description = "eBPF program crate for stateful NAT64 packet translation."
+keywords = ["nat64", "ebpf", "xdp", "networking", "ipv6"]
+categories = ["network-programming", "no-std"]
+rust-version.workspace = true
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+aya-ebpf = { version = "0.2.1", git = "https://github.com/aya-rs/aya", default-features = false, rev = "412fe810cb9d933a3db42d7b427ad8290f969c3d" }
+aya-ebpf-bindings = { version = "0.2.0", git = "https://github.com/aya-rs/aya", default-features = false, rev = "412fe810cb9d933a3db42d7b427ad8290f969c3d" }
+nat64-common = { package = "natto64-abi", version = "0.1.0", path = "../natto64-abi" }
+
+[build-dependencies]
+which = { version = "6.0.0", default-features = false }

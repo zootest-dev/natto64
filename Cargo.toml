@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "examples/simple",
+    "examples/opentelemetry-metrics",
+    "natto64",
+    "natto64-abi",
+    "natto64-ebpf",
+    "natto64-xlat",
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = [
+  "Mati Lipien <mati@zootest.com>",
+]
+description = "Userspace and eBPF crates for a high-performance NAT64 implementation."
+license = "GPL-2.0"
+repository = "https://github.com/zootest-dev/nat64"
+homepage = "https://github.com/zootest-dev/nat64"
+documentation = "https://docs.rs/natto64"
+rust-version = "1.85"
+edition = "2024"
+
+[profile.release.package.natto64-ebpf]
+debug = 2
+codegen-units = 1

@@ -1,0 +1,13 @@
+[package]
+name = "natto64-example"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "natto64-example"
+path = "main.rs"
+
+[dependencies]
+natto64 = { path = "../../natto64" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }

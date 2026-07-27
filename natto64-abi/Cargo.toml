@@ -1,0 +1,24 @@
+[package]
+name = "natto64-abi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/natto64-abi"
+description = "Shared no_std eBPF ABI types, map layouts, NAT state, and counters for natto64."
+keywords = ["nat64", "networking", "ipv6", "ipv4", "ebpf"]
+categories = ["network-programming", "no-std"]
+rust-version.workspace = true
+
+[features]
+default = []
+server = ["aya"]
+
+[dependencies]
+aya = { version = "0.14.0", git = "https://github.com/aya-rs/aya", default-features = false, optional = true, rev = "412fe810cb9d933a3db42d7b427ad8290f969c3d" }
+natto64-xlat = { version = "0.1.0", path = "../natto64-xlat" }
+
+[lib]
+path = "src/lib.rs"

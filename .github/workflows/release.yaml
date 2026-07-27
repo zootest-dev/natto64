@@ -1,0 +1,97 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version
+        required: true
+        type: string
+      dry_run:
+        description: Dry-run
+        required: false
+        type: boolean
+        default: false
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.release_meta.outputs.should_release }}
+      version: ${{ steps.release_meta.outputs.version }}
+    steps:
+      - name: Verify manual release inputs
+        id: release_meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          MANUAL_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          version="$INPUT_VERSION"
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version format: $version"
+            echo "Expected format: vMAJOR.MINOR.PATCH (optional prerelease/build metadata supported)."
+            exit 1
+          fi
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Manual release validated for version: $version"
+  build-ebpf:
+    runs-on: ubuntu-latest
+    needs: release-check
+    if: needs.release-check.outputs.should_release == 'true'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install Rust nightly toolchain
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup component add rust-src --toolchain nightly
+      - name: Install bpf-linker
+        run: cargo +nightly install bpf-linker --locked
+      - name: Build eBPF module
+        run: cargo +nightly -Z build-std=core build -p natto64-ebpf --target bpfel-unknown-none --release
+      - name: Upload eBPF artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: natto64-ebpf
+          path: target/bpfel-unknown-none/release/libnatto64_ebpf.so
+          if-no-files-found: error
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-ebpf]
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Download eBPF artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: natto64-ebpf
+          path: dist
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+          mv dist/libnatto64_ebpf.so dist/natto64-ebpf
+      - name: Create or update GitHub release and upload eBPF attachments
+        if: env.DRY_RUN != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ env.RELEASE_VERSION }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; uploading assets with overwrite."
+            gh release upload "$TAG" \
+              dist/natto64-ebpf \
+              --clobber
+          else
+            gh release create "$TAG" \
+              dist/natto64-ebpf \
+              --target "$GITHUB_SHA" \
+              --generate-notes
+          fi
