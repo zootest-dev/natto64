@@ -17,8 +17,8 @@ path = "src/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-aya-ebpf = { version = "0.2.1", git = "https://github.com/aya-rs/aya", default-features = false, rev = "412fe810cb9d933a3db42d7b427ad8290f969c3d" }
-aya-ebpf-bindings = { version = "0.2.0", git = "https://github.com/aya-rs/aya", default-features = false, rev = "412fe810cb9d933a3db42d7b427ad8290f969c3d" }
+aya-ebpf = { version = "0.2.1", git = "https://github.com/zootest-dev/aya", default-features = false, rev = "ec55054797f71f8e1250aeb88a58141040db8af1" }
+aya-ebpf-bindings = { version = "0.2.0", git = "https://github.com/zootest-dev/aya", default-features = false, rev = "ec55054797f71f8e1250aeb88a58141040db8af1" }
 natto64-abi = { version = "0.1.0", path = "../natto64-abi" }
 
 [build-dependencies]
