@@ -683,14 +683,14 @@ mod tests {
 
     #[test]
     fn ethertype_helper_order_matches_bpf_expectation_ipv4() {
-        // bpf_skb_change_proto expects a __be16 numeric value, which differs from wire bytes
-        // on little-endian hosts.
-        assert_eq!(0x0800u16.to_be(), 0x0008);
+        // bpf_skb_change_proto expects a __be16 numeric value. Verify its native-memory
+        // bytes are canonical network order on both little- and big-endian hosts.
+        assert_eq!(0x0800u16.to_be().to_ne_bytes(), [0x08, 0x00]);
     }
 
     #[test]
     fn ethertype_helper_order_matches_bpf_expectation_ipv6() {
-        assert_eq!(0x86DDu16.to_be(), 0xDD86);
+        assert_eq!(0x86DDu16.to_be().to_ne_bytes(), [0x86, 0xDD]);
     }
 
     #[test]

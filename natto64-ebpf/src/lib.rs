@@ -305,13 +305,23 @@ fn fwd_nat_key(
     remote_port: u16,
     proto: u8,
 ) -> FwdNatKey {
-    FwdNatKey {
-        vm_v6,
-        remote_v4,
-        vm_port,
-        remote_port,
-        proto,
-        _pad: [0; 3],
+    let mut key = core::mem::MaybeUninit::<FwdNatKey>::uninit();
+    let key_ptr = key.as_mut_ptr();
+
+    // Keep the shared repr(C) ABI unchanged. Initializing `_pad` with `[0; 3]`
+    // can be lowered to memset, which the BPF verifier rejects when that helper
+    // receives a pointer into the caller's stack. Use constant-offset stores.
+    unsafe {
+        core::ptr::addr_of_mut!((*key_ptr).vm_v6).write(vm_v6);
+        core::ptr::addr_of_mut!((*key_ptr).remote_v4).write(remote_v4);
+        core::ptr::addr_of_mut!((*key_ptr).vm_port).write(vm_port);
+        core::ptr::addr_of_mut!((*key_ptr).remote_port).write(remote_port);
+        core::ptr::addr_of_mut!((*key_ptr).proto).write(proto);
+        core::ptr::addr_of_mut!((*key_ptr)._pad[0]).write(0);
+        core::ptr::addr_of_mut!((*key_ptr)._pad[1]).write(0);
+        core::ptr::addr_of_mut!((*key_ptr)._pad[2]).write(0);
+
+        key.assume_init()
     }
 }
 
