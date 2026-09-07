@@ -226,6 +226,15 @@ impl Nat64 {
 fn ensure_clsact(interface: &str) -> Result<()> {
     match tc::qdisc_add_clsact(interface) {
         Ok(()) | Err(TcError::AlreadyAttached) => Ok(()),
+
+        Err(TcError::NetlinkError(source))
+            if source.raw_os_error().is_some_and(|errno| {
+                std::io::Error::from_raw_os_error(errno).kind() == std::io::ErrorKind::AlreadyExists
+            }) =>
+        {
+            Ok(())
+        }
+
         Err(source) => Err(Error::TrafficControl {
             interface: interface.to_owned(),
             source,
