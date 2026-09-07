@@ -1213,40 +1213,86 @@ fn try_nat64_reverse(mut ctx: TcContext) -> Result<i32, i32> {
     Ok(redirect_to_iface(cfg.bridge_ifindex, false))
 }
 
+#[inline(never)]
+fn count_fwd_redirect_ok() {
+    if let Some(prod) = PROD_COUNTERS.get_ptr_mut(0) {
+        unsafe {
+            (*prod).fwd_redirect_ok = (*prod).fwd_redirect_ok.saturating_add(1);
+        }
+    }
+    if let Some(debug) = DEBUG_COUNTERS.get_ptr_mut(0) {
+        unsafe {
+            (*debug).dbg_fwd_return_ok = (*debug).dbg_fwd_return_ok.saturating_add(1);
+        }
+    }
+}
+
+#[inline(never)]
+fn count_fwd_redirect_err() {
+    if let Some(prod) = PROD_COUNTERS.get_ptr_mut(0) {
+        unsafe {
+            (*prod).fwd_redirect_err = (*prod).fwd_redirect_err.saturating_add(1);
+        }
+    }
+    if let Some(debug) = DEBUG_COUNTERS.get_ptr_mut(0) {
+        unsafe {
+            (*debug).dbg_fwd_return_err = (*debug).dbg_fwd_return_err.saturating_add(1);
+        }
+    }
+}
+
+#[inline(never)]
+fn count_rev_redirect_ok() {
+    if let Some(prod) = PROD_COUNTERS.get_ptr_mut(0) {
+        unsafe {
+            (*prod).rev_redirect_ok = (*prod).rev_redirect_ok.saturating_add(1);
+        }
+    }
+    if let Some(debug) = DEBUG_COUNTERS.get_ptr_mut(0) {
+        unsafe {
+            (*debug).dbg_rev_return_ok = (*debug).dbg_rev_return_ok.saturating_add(1);
+        }
+    }
+}
+
+#[inline(never)]
+fn count_rev_redirect_err() {
+    if let Some(prod) = PROD_COUNTERS.get_ptr_mut(0) {
+        unsafe {
+            (*prod).rev_redirect_err = (*prod).rev_redirect_err.saturating_add(1);
+        }
+    }
+    if let Some(debug) = DEBUG_COUNTERS.get_ptr_mut(0) {
+        unsafe {
+            (*debug).dbg_rev_return_err = (*debug).dbg_rev_return_err.saturating_add(1);
+        }
+    }
+}
+
 #[inline(always)]
 fn redirect_to_iface(ifindex: u32, forward: bool) -> i32 {
     if ifindex == 0 {
-        with_counters(|prod, debug| {
-            if forward {
-                prod.fwd_redirect_err = prod.fwd_redirect_err.saturating_add(1);
-                debug.dbg_fwd_return_err = debug.dbg_fwd_return_err.saturating_add(1);
-            } else {
-                prod.rev_redirect_err = prod.rev_redirect_err.saturating_add(1);
-                debug.dbg_rev_return_err = debug.dbg_rev_return_err.saturating_add(1);
-            }
-        });
+        if forward {
+            count_fwd_redirect_err();
+        } else {
+            count_rev_redirect_err();
+        }
         return TC_ACT_SHOT;
     }
 
     let action = unsafe { bpf_redirect_neigh(ifindex, core::ptr::null_mut(), 0, 0) } as i32;
 
-    with_counters(|prod, debug| {
-        if action == TC_ACT_REDIRECT {
-            if forward {
-                prod.fwd_redirect_ok = prod.fwd_redirect_ok.saturating_add(1);
-                debug.dbg_fwd_return_ok = debug.dbg_fwd_return_ok.saturating_add(1);
-            } else {
-                prod.rev_redirect_ok = prod.rev_redirect_ok.saturating_add(1);
-                debug.dbg_rev_return_ok = debug.dbg_rev_return_ok.saturating_add(1);
-            }
-        } else if forward {
-            prod.fwd_redirect_err = prod.fwd_redirect_err.saturating_add(1);
-            debug.dbg_fwd_return_err = debug.dbg_fwd_return_err.saturating_add(1);
+    if action == TC_ACT_REDIRECT {
+        if forward {
+            count_fwd_redirect_ok();
         } else {
-            prod.rev_redirect_err = prod.rev_redirect_err.saturating_add(1);
-            debug.dbg_rev_return_err = debug.dbg_rev_return_err.saturating_add(1);
+            count_rev_redirect_ok();
         }
-    });
+    } else if forward {
+        count_fwd_redirect_err();
+    } else {
+        count_rev_redirect_err();
+    }
 
     action
 }
