@@ -19,9 +19,8 @@ use natto64_abi::{
     CONFIG_KEY, COOLDOWN_SIZE, DBG_FWD_DST_SAMPLE_SLOTS, DBG_FWD_TCP_CSUM_SAMPLE_SLOTS,
     DBG_FWD_TCP_SAMPLE_SLOTS, DbgFwdTcpCsumSample, DbgFwdTcpSample, DbgIpv6Sample, DebugCounters,
     FwdNatKey, Nat64Config, NatKey, NatVal, PortCooldownRing, ProdCounters, V4_POOL_MAX,
-    V4_SELECT_POLICY_HASH_VM_V6, build_ipv4_pseudo_header_bytes, build_ipv6_pseudo_header_bytes,
-    nat_key, nat_lookup_key_from_ipv4, nat_tuple_matches, nat64_embedded_v4_be,
-    nat64_embedded_v4_bytes,
+    V4_SELECT_POLICY_HASH_VM_V6, nat_key, nat_lookup_key_from_ipv4, nat_tuple_matches,
+    nat64_embedded_v4_be, nat64_embedded_v4_bytes,
 };
 
 const ETH_HDR_LEN: usize = 14;
@@ -65,6 +64,68 @@ struct TimedFwdNatVal {
     _pad2: u32,
     observed_last_seen_ns: u64,
     timer: bpf_timer,
+}
+
+#[repr(C)]
+struct Ipv4PseudoHeader {
+    src_v4_be: u32,
+    dst_v4_be: u32,
+    zero_proto_be: u16,
+    l4_len_be: u16,
+}
+
+impl Ipv4PseudoHeader {
+    #[inline(always)]
+    fn new(src_v4: u32, dst_v4: u32, l4_len: u16, proto: u8) -> Self {
+        Self {
+            src_v4_be: src_v4.to_be(),
+            dst_v4_be: dst_v4.to_be(),
+            zero_proto_be: u16::from(proto).to_be(),
+            l4_len_be: l4_len.to_be(),
+        }
+    }
+}
+
+#[repr(C)]
+struct Ipv6PseudoHeader {
+    src_v6: [u8; 16],
+    dst_v6: [u8; 16],
+    l4_len_be: u32,
+    next_header_be: u32,
+}
+
+impl Ipv6PseudoHeader {
+    #[inline(always)]
+    fn new(src_v6: &[u8; 16], dst_v6: &[u8; 16], l4_len: u16, next_header: u8) -> Self {
+        Self {
+            src_v6: *src_v6,
+            dst_v6: *dst_v6,
+            l4_len_be: u32::from(l4_len).to_be(),
+            next_header_be: u32::from(next_header).to_be(),
+        }
+    }
+}
+
+#[repr(C)]
+struct Ipv4WireHeader {
+    version_ihl_dscp_ecn_be: u16,
+    total_len_be: u16,
+    identification_be: u16,
+    flags_fragment_be: u16,
+    ttl_proto_be: u16,
+    checksum_be: u16,
+    src_v4_be: u32,
+    dst_v4_be: u32,
+}
+
+#[repr(C)]
+struct Ipv6WireHeader {
+    version_tc_flow_be: u32,
+    payload_len_be: u16,
+    next_header: u8,
+    hop_limit: u8,
+    src_v6: [u8; 16],
+    dst_v6: [u8; 16],
 }
 
 impl TimedFwdNatVal {
@@ -747,6 +808,29 @@ pub fn nat64_reverse(ctx: TcContext) -> i32 {
 }
 
 #[inline(always)]
+fn nat64_source_v6(ipv4_src: u32) -> [u8; 16] {
+    let v4 = ipv4_src.to_be_bytes();
+    [
+        NAT64_WKPF_PREFIX[0],
+        NAT64_WKPF_PREFIX[1],
+        NAT64_WKPF_PREFIX[2],
+        NAT64_WKPF_PREFIX[3],
+        NAT64_WKPF_PREFIX[4],
+        NAT64_WKPF_PREFIX[5],
+        NAT64_WKPF_PREFIX[6],
+        NAT64_WKPF_PREFIX[7],
+        NAT64_WKPF_PREFIX[8],
+        NAT64_WKPF_PREFIX[9],
+        NAT64_WKPF_PREFIX[10],
+        NAT64_WKPF_PREFIX[11],
+        v4[0],
+        v4[1],
+        v4[2],
+        v4[3],
+    ]
+}
+
+#[inline(always)]
 fn try_nat64_reverse(mut ctx: TcContext) -> Result<i32, i32> {
     with_counters(|prod, debug| {
         debug.dbg_rev_enter = debug.dbg_rev_enter.saturating_add(1);
@@ -903,9 +987,7 @@ fn try_nat64_reverse(mut ctx: TcContext) -> Result<i32, i32> {
             return Ok(TC_ACT_PIPE);
         }
 
-        let mut src_v6 = [0u8; 16];
-        src_v6[..12].copy_from_slice(&NAT64_WKPF_PREFIX);
-        src_v6[12..16].copy_from_slice(&ipv4_src.to_be_bytes());
+        let src_v6 = nat64_source_v6(ipv4_src);
 
         if write_ipv6_header(
             &mut ctx,
@@ -1052,9 +1134,7 @@ fn try_nat64_reverse(mut ctx: TcContext) -> Result<i32, i32> {
         return Ok(TC_ACT_PIPE);
     }
 
-    let mut src_v6 = [0u8; 16];
-    src_v6[..12].copy_from_slice(&NAT64_WKPF_PREFIX);
-    src_v6[12..16].copy_from_slice(&ipv4_src.to_be_bytes());
+    let src_v6 = nat64_source_v6(ipv4_src);
 
     if write_ipv6_header(&mut ctx, udp_len, IPPROTO_UDP, &src_v6, &refreshed.vm_v6).is_err() {
         with_counters(|prod, debug| {
@@ -1181,46 +1261,38 @@ fn write_ipv4_header(
 ) -> Result<(), ()> {
     let total_len = payload_len.checked_add(IPV4_HDR_LEN as u16).ok_or(())?;
 
-    let mut hdr = [0u8; IPV4_HDR_LEN];
-    hdr[0] = 0x45;
-    hdr[2..4].copy_from_slice(&total_len.to_be_bytes());
-    hdr[8] = 64;
-    hdr[9] = l4_proto;
-    hdr[12..16].copy_from_slice(&src_v4.to_be_bytes());
-    hdr[16..20].copy_from_slice(&dst_v4.to_be_bytes());
+    let mut sum = 0u32;
+    sum = sum.wrapping_add(0x4500);
+    sum = sum.wrapping_add(u32::from(total_len));
+    sum = sum.wrapping_add(u32::from((64u16 << 8) | u16::from(l4_proto)));
+    sum = sum.wrapping_add(src_v4 >> 16);
+    sum = sum.wrapping_add(src_v4 & 0xffff);
+    sum = sum.wrapping_add(dst_v4 >> 16);
+    sum = sum.wrapping_add(dst_v4 & 0xffff);
+    let checksum = !fold_u32_fixed(sum);
 
-    let checksum = ipv4_header_checksum_20b_local(&hdr);
-    hdr[10..12].copy_from_slice(&checksum.to_be_bytes());
+    let hdr = Ipv4WireHeader {
+        version_ihl_dscp_ecn_be: 0x4500u16.to_be(),
+        total_len_be: total_len.to_be(),
+        identification_be: 0,
+        flags_fragment_be: 0,
+        ttl_proto_be: ((64u16 << 8) | u16::from(l4_proto)).to_be(),
+        checksum_be: checksum.to_be(),
+        src_v4_be: src_v4.to_be(),
+        dst_v4_be: dst_v4.to_be(),
+    };
 
     ctx.store(ETH_HDR_LEN, &hdr, 0).map_err(|_| ())
 }
 
 // Verifier note:
-// Do not use the shared checksum fold helper in eBPF, because its carry-fold
-// while-loop causes verifier complexity blowups. Keep this helper fully
-// straight-line and fixed-width.
+// Keep the IPv4 checksum fold fully straight-line and fixed-width.
 #[inline(always)]
 fn fold_u32_fixed(mut sum: u32) -> u16 {
     sum = (sum & 0xffff) + (sum >> 16);
     sum = (sum & 0xffff) + (sum >> 16);
     sum = (sum & 0xffff) + (sum >> 16);
     sum as u16
-}
-
-#[inline(always)]
-fn ipv4_header_checksum_20b_local(hdr: &[u8; 20]) -> u16 {
-    let mut sum = 0u32;
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[0], hdr[1]])));
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[2], hdr[3]])));
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[4], hdr[5]])));
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[6], hdr[7]])));
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[8], hdr[9]])));
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[10], hdr[11]])));
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[12], hdr[13]])));
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[14], hdr[15]])));
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[16], hdr[17]])));
-    sum = sum.wrapping_add(u32::from(u16::from_be_bytes([hdr[18], hdr[19]])));
-    !fold_u32_fixed(sum)
 }
 
 #[inline(always)]
@@ -1307,20 +1379,19 @@ fn udp_ports_len(ctx: &TcContext, udp_offset: usize) -> Result<(u16, u16, u16), 
 }
 
 #[inline(always)]
-fn csum_diff(old_bytes: &mut [u8], new_bytes: &mut [u8]) -> Result<u64, ()> {
-    if !old_bytes.len().is_multiple_of(4) || !new_bytes.len().is_multiple_of(4) {
+fn csum_diff<Old, New>(old: &mut Old, new: &mut New) -> Result<u64, ()> {
+    let from_size = core::mem::size_of::<Old>();
+    let to_size = core::mem::size_of::<New>();
+    if !from_size.is_multiple_of(4) || !to_size.is_multiple_of(4) {
         return Err(());
     }
 
-    let from_size = u32::try_from(old_bytes.len()).map_err(|_| ())?;
-    let to_size = u32::try_from(new_bytes.len()).map_err(|_| ())?;
-
     let diff = unsafe {
         bpf_csum_diff(
-            old_bytes.as_mut_ptr().cast(),
-            from_size,
-            new_bytes.as_mut_ptr().cast(),
-            to_size,
+            (old as *mut Old).cast(),
+            from_size as u32,
+            (new as *mut New).cast(),
+            to_size as u32,
             0,
         )
     };
@@ -1350,8 +1421,8 @@ fn apply_l4_nat64_checksum_delta_v6_to_v4(
 ) -> Result<FwdL4CsumTrace, ()> {
     let old_check_be = ctx.load::<u16>(csum_offset).map_err(|_| ())?;
 
-    let mut old_pseudo = build_ipv6_pseudo_header_bytes(old_src_v6, old_dst_v6, l4_len, proto);
-    let mut new_pseudo = build_ipv4_pseudo_header_bytes(new_src_v4, new_dst_v4, l4_len, proto);
+    let mut old_pseudo = Ipv6PseudoHeader::new(old_src_v6, old_dst_v6, l4_len, proto);
+    let mut new_pseudo = Ipv4PseudoHeader::new(new_src_v4, new_dst_v4, l4_len, proto);
     let pseudo_delta = csum_diff(&mut old_pseudo, &mut new_pseudo)?;
 
     ctx.l4_csum_replace(csum_offset, 0, pseudo_delta, u64::from(BPF_F_PSEUDO_HDR))
@@ -1408,8 +1479,8 @@ fn apply_l4_nat64_checksum_delta_v4_to_v6(
     port_rewrite: Option<(u16, u16)>,
     udp_v6: bool,
 ) -> Result<(), ()> {
-    let mut old_pseudo = build_ipv4_pseudo_header_bytes(old_src_v4, old_dst_v4, l4_len, proto);
-    let mut new_pseudo = build_ipv6_pseudo_header_bytes(new_src_v6, new_dst_v6, l4_len, proto);
+    let mut old_pseudo = Ipv4PseudoHeader::new(old_src_v4, old_dst_v4, l4_len, proto);
+    let mut new_pseudo = Ipv6PseudoHeader::new(new_src_v6, new_dst_v6, l4_len, proto);
     let pseudo_delta = csum_diff(&mut old_pseudo, &mut new_pseudo)?;
 
     ctx.l4_csum_replace(csum_offset, 0, pseudo_delta, u64::from(BPF_F_PSEUDO_HDR))
@@ -1833,18 +1904,21 @@ fn record_fwd_tcp_sample(
     };
 
     unsafe {
-        *slot_ref = DbgFwdTcpSample {
-            seq: u64::from(seq),
-            dst6: *dst6,
-            dst4,
-            dst4_be,
-            src4_be,
-            tcp_sport,
-            tcp_dport,
-            nat_insert_ok: nat_insert_ok as u8,
-            adjust_room_ok: adjust_room_ok as u8,
-            _pad: [0; 6],
-        };
+        (*slot_ref).seq = u64::from(seq);
+        (*slot_ref).dst6 = *dst6;
+        (*slot_ref).dst4 = dst4;
+        (*slot_ref).dst4_be = dst4_be;
+        (*slot_ref).src4_be = src4_be;
+        (*slot_ref).tcp_sport = tcp_sport;
+        (*slot_ref).tcp_dport = tcp_dport;
+        (*slot_ref).nat_insert_ok = nat_insert_ok as u8;
+        (*slot_ref).adjust_room_ok = adjust_room_ok as u8;
+        core::ptr::addr_of_mut!((*slot_ref)._pad[0]).write_volatile(0);
+        core::ptr::addr_of_mut!((*slot_ref)._pad[1]).write_volatile(0);
+        core::ptr::addr_of_mut!((*slot_ref)._pad[2]).write_volatile(0);
+        core::ptr::addr_of_mut!((*slot_ref)._pad[3]).write_volatile(0);
+        core::ptr::addr_of_mut!((*slot_ref)._pad[4]).write_volatile(0);
+        core::ptr::addr_of_mut!((*slot_ref)._pad[5]).write_volatile(0);
     }
 }
 fn record_fwd_dst_sample(dst: &[u8; 16]) {
@@ -1953,13 +2027,14 @@ fn write_ipv6_header(
     src_v6: &[u8; 16],
     dst_v6: &[u8; 16],
 ) -> Result<(), ()> {
-    let mut hdr = [0u8; 40];
-    hdr[0] = 0x60;
-    hdr[4..6].copy_from_slice(&payload_len.to_be_bytes());
-    hdr[6] = next_header;
-    hdr[7] = 64;
-    hdr[8..24].copy_from_slice(src_v6);
-    hdr[24..40].copy_from_slice(dst_v6);
+    let hdr = Ipv6WireHeader {
+        version_tc_flow_be: 0x6000_0000u32.to_be(),
+        payload_len_be: payload_len.to_be(),
+        next_header,
+        hop_limit: 64,
+        src_v6: *src_v6,
+        dst_v6: *dst_v6,
+    };
 
     ctx.store(ETH_HDR_LEN, &hdr, 0).map_err(|_| ())
 }
