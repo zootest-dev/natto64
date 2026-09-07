@@ -38,6 +38,10 @@ jobs:
           rustup toolchain install nightly --profile minimal
           rustup component add rust-src --toolchain nightly
       - name: Install bpf-linker
-        run: cargo +nightly install bpf-linker --locked
+        run: |
+          curl -fsSL -o /tmp/bpf-linker.tar.zst \
+            "https://github.com/aya-rs/bpf-linker/releases/download/v0.11.0/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
+          tar --zstd -xf /tmp/bpf-linker.tar.zst -C /tmp
+          sudo mv /tmp/bpf-linker /usr/local/bin/bpf-linker
       - name: Build natto64-ebpf
         run: cargo +nightly -Z build-std=core build -p natto64-ebpf --target bpfel-unknown-none --release
