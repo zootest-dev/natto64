@@ -1772,18 +1772,142 @@ fn v4_in_pool(v4: u32, cfg: &Nat64Config) -> bool {
 
 #[inline(never)]
 fn cooldown_contains(ring: &PortCooldownRing, port: u16) -> bool {
-    for i in 0..COOLDOWN_SIZE {
-        if ring.ports[i] == port {
-            return true;
-        }
-    }
-    false
+    ring.ports[0] == port
+        || ring.ports[1] == port
+        || ring.ports[2] == port
+        || ring.ports[3] == port
+        || ring.ports[4] == port
+        || ring.ports[5] == port
+        || ring.ports[6] == port
+        || ring.ports[7] == port
+        || ring.ports[8] == port
+        || ring.ports[9] == port
+        || ring.ports[10] == port
+        || ring.ports[11] == port
+        || ring.ports[12] == port
+        || ring.ports[13] == port
+        || ring.ports[14] == port
+        || ring.ports[15] == port
+        || ring.ports[16] == port
+        || ring.ports[17] == port
+        || ring.ports[18] == port
+        || ring.ports[19] == port
+        || ring.ports[20] == port
+        || ring.ports[21] == port
+        || ring.ports[22] == port
+        || ring.ports[23] == port
+        || ring.ports[24] == port
+        || ring.ports[25] == port
+        || ring.ports[26] == port
+        || ring.ports[27] == port
+        || ring.ports[28] == port
+        || ring.ports[29] == port
+        || ring.ports[30] == port
+        || ring.ports[31] == port
+        || ring.ports[32] == port
+        || ring.ports[33] == port
+        || ring.ports[34] == port
+        || ring.ports[35] == port
+        || ring.ports[36] == port
+        || ring.ports[37] == port
+        || ring.ports[38] == port
+        || ring.ports[39] == port
+        || ring.ports[40] == port
+        || ring.ports[41] == port
+        || ring.ports[42] == port
+        || ring.ports[43] == port
+        || ring.ports[44] == port
+        || ring.ports[45] == port
+        || ring.ports[46] == port
+        || ring.ports[47] == port
+        || ring.ports[48] == port
+        || ring.ports[49] == port
+        || ring.ports[50] == port
+        || ring.ports[51] == port
+        || ring.ports[52] == port
+        || ring.ports[53] == port
+        || ring.ports[54] == port
+        || ring.ports[55] == port
+        || ring.ports[56] == port
+        || ring.ports[57] == port
+        || ring.ports[58] == port
+        || ring.ports[59] == port
+        || ring.ports[60] == port
+        || ring.ports[61] == port
+        || ring.ports[62] == port
+        || ring.ports[63] == port
 }
 
 #[inline(never)]
 fn cooldown_push(ring: &mut PortCooldownRing, port: u16) {
     let slot = (ring.idx as usize) % COOLDOWN_SIZE;
-    ring.ports[slot] = port;
+    match slot {
+        0 => ring.ports[0] = port,
+        1 => ring.ports[1] = port,
+        2 => ring.ports[2] = port,
+        3 => ring.ports[3] = port,
+        4 => ring.ports[4] = port,
+        5 => ring.ports[5] = port,
+        6 => ring.ports[6] = port,
+        7 => ring.ports[7] = port,
+        8 => ring.ports[8] = port,
+        9 => ring.ports[9] = port,
+        10 => ring.ports[10] = port,
+        11 => ring.ports[11] = port,
+        12 => ring.ports[12] = port,
+        13 => ring.ports[13] = port,
+        14 => ring.ports[14] = port,
+        15 => ring.ports[15] = port,
+        16 => ring.ports[16] = port,
+        17 => ring.ports[17] = port,
+        18 => ring.ports[18] = port,
+        19 => ring.ports[19] = port,
+        20 => ring.ports[20] = port,
+        21 => ring.ports[21] = port,
+        22 => ring.ports[22] = port,
+        23 => ring.ports[23] = port,
+        24 => ring.ports[24] = port,
+        25 => ring.ports[25] = port,
+        26 => ring.ports[26] = port,
+        27 => ring.ports[27] = port,
+        28 => ring.ports[28] = port,
+        29 => ring.ports[29] = port,
+        30 => ring.ports[30] = port,
+        31 => ring.ports[31] = port,
+        32 => ring.ports[32] = port,
+        33 => ring.ports[33] = port,
+        34 => ring.ports[34] = port,
+        35 => ring.ports[35] = port,
+        36 => ring.ports[36] = port,
+        37 => ring.ports[37] = port,
+        38 => ring.ports[38] = port,
+        39 => ring.ports[39] = port,
+        40 => ring.ports[40] = port,
+        41 => ring.ports[41] = port,
+        42 => ring.ports[42] = port,
+        43 => ring.ports[43] = port,
+        44 => ring.ports[44] = port,
+        45 => ring.ports[45] = port,
+        46 => ring.ports[46] = port,
+        47 => ring.ports[47] = port,
+        48 => ring.ports[48] = port,
+        49 => ring.ports[49] = port,
+        50 => ring.ports[50] = port,
+        51 => ring.ports[51] = port,
+        52 => ring.ports[52] = port,
+        53 => ring.ports[53] = port,
+        54 => ring.ports[54] = port,
+        55 => ring.ports[55] = port,
+        56 => ring.ports[56] = port,
+        57 => ring.ports[57] = port,
+        58 => ring.ports[58] = port,
+        59 => ring.ports[59] = port,
+        60 => ring.ports[60] = port,
+        61 => ring.ports[61] = port,
+        62 => ring.ports[62] = port,
+        63 => ring.ports[63] = port,
+        _ => return,
+    }
     ring.idx = ring.idx.wrapping_add(1);
 }
 
