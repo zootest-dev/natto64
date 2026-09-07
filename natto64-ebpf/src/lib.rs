@@ -3,7 +3,7 @@
 
 mod ipv6;
 
-use aya_ebpf::helpers::{bpf_printk, generated::bpf_csum_diff};
+use aya_ebpf::helpers::generated::bpf_csum_diff;
 use aya_ebpf::{
     bindings::{BPF_F_MARK_MANGLED_0, BPF_F_PSEUDO_HDR, TC_ACT_PIPE, TC_ACT_REDIRECT, TC_ACT_SHOT},
     btf_maps::LruHashMap as BtfLruHashMap,
@@ -123,12 +123,6 @@ static DBG_FWD_TCP_CSUM_SAMPLES: PerCpuArray<DbgFwdTcpCsumSample> =
 
 #[map]
 static DBG_FWD_TCP_CSUM_SAMPLE_CURSOR: PerCpuArray<u32> = PerCpuArray::with_max_entries(1, 0);
-
-#[map]
-static DBG_CHANGE_PROTO_FAIL_PRINT_FWD: PerCpuArray<u32> = PerCpuArray::with_max_entries(1, 0);
-
-#[map]
-static DBG_CHANGE_PROTO_FAIL_PRINT_REV: PerCpuArray<u32> = PerCpuArray::with_max_entries(1, 0);
 
 #[inline(always)]
 fn session_timeout_ns(cfg: &Nat64Config) -> u64 {
@@ -435,15 +429,6 @@ fn try_nat64_forward(mut ctx: TcContext) -> Result<i32, i32> {
                 debug.dbg_fwd_adjust_room_err = debug.dbg_fwd_adjust_room_err.saturating_add(1);
                 debug.dbg_fwd_return_err = debug.dbg_fwd_return_err.saturating_add(1);
             });
-            if should_log_change_proto_fail(true) {
-                unsafe {
-                    bpf_printk!(
-                        c"dbg change_proto fail: target=ipv4 host=0x%x helper=0x%x",
-                        ETH_P_IP as u32,
-                        ETH_P_IP_HELPER as u32
-                    );
-                }
-            }
             return Ok(TC_ACT_PIPE);
         }
         with_counters(|prod, debug| {
@@ -646,15 +631,6 @@ fn try_nat64_forward(mut ctx: TcContext) -> Result<i32, i32> {
         with_counters(|prod, debug| {
             debug.dbg_fwd_return_err = debug.dbg_fwd_return_err.saturating_add(1);
         });
-        if should_log_change_proto_fail(true) {
-            unsafe {
-                bpf_printk!(
-                    c"dbg change_proto fail: target=ipv4 host=0x%x helper=0x%x",
-                    ETH_P_IP as u32,
-                    ETH_P_IP_HELPER as u32
-                );
-            }
-        }
         return Ok(TC_ACT_PIPE);
     }
     with_counters(|prod, debug| debug.proto_change_ok = debug.proto_change_ok.saturating_add(1));
@@ -912,15 +888,6 @@ fn try_nat64_reverse(mut ctx: TcContext) -> Result<i32, i32> {
             with_counters(|prod, debug| {
                 debug.dbg_rev_return_err = debug.dbg_rev_return_err.saturating_add(1);
             });
-            if should_log_change_proto_fail(false) {
-                unsafe {
-                    bpf_printk!(
-                        c"dbg change_proto fail: target=ipv6 host=0x%x helper=0x%x",
-                        ETH_P_IPV6 as u32,
-                        ETH_P_IPV6_HELPER as u32
-                    );
-                }
-            }
             return Ok(TC_ACT_PIPE);
         }
 
@@ -1070,15 +1037,6 @@ fn try_nat64_reverse(mut ctx: TcContext) -> Result<i32, i32> {
         with_counters(|prod, debug| {
             debug.dbg_rev_return_err = debug.dbg_rev_return_err.saturating_add(1);
         });
-        if should_log_change_proto_fail(false) {
-            unsafe {
-                bpf_printk!(
-                    c"dbg change_proto fail: target=ipv6 host=0x%x helper=0x%x",
-                    ETH_P_IPV6 as u32,
-                    ETH_P_IPV6_HELPER as u32
-                );
-            }
-        }
         return Ok(TC_ACT_PIPE);
     }
 
@@ -1209,17 +1167,6 @@ fn redirect_to_iface(ifindex: u32, forward: bool) -> i32 {
             debug.dbg_rev_return_err = debug.dbg_rev_return_err.saturating_add(1);
         }
     });
-
-    if action != TC_ACT_REDIRECT {
-        unsafe {
-            bpf_printk!(
-                c"dbg redirect_neigh unexpected action=%d ifindex=%d dir=%d",
-                action as u32,
-                ifindex,
-                if forward { 1 } else { 0 }
-            );
-        }
-    }
 
     action
 }
@@ -1853,20 +1800,6 @@ fn record_fwd_tcp_csum_sample(
         debug.dbg_fwd_tcp_csum_sample_ok = debug.dbg_fwd_tcp_csum_sample_ok.saturating_add(1);
     });
 
-    if seq == 1 {
-        unsafe {
-            bpf_printk!(
-                c"dbg csum sample write: old=0x%x pseudo=0x%x port=0x%x final=0x%x sport_old=%u sport_new=%u",
-                u32::from(u16::from_be(trace.old_check_be)),
-                u32::from(u16::from_be(trace.after_pseudo_be)),
-                u32::from(u16::from_be(trace.after_port_be)),
-                u32::from(u16::from_be(final_check_be)),
-                u32::from(u16::from_be(old_sport_be)),
-                u32::from(u16::from_be(new_sport_be)),
-            );
-        }
-    }
-
     Ok(())
 }
 
@@ -2000,25 +1933,6 @@ where
     F: FnOnce(&mut ProdCounters, &mut DebugCounters),
 {
     with_prod_counters(|prod| with_debug_counters(|debug| f(prod, debug)));
-}
-
-#[inline(always)]
-fn should_log_change_proto_fail(is_forward: bool) -> bool {
-    let map = if is_forward {
-        &DBG_CHANGE_PROTO_FAIL_PRINT_FWD
-    } else {
-        &DBG_CHANGE_PROTO_FAIL_PRINT_REV
-    };
-
-    if let Some(slot) = map.get_ptr_mut(0) {
-        unsafe {
-            let seen = *slot;
-            *slot = seen.saturating_add(1);
-            seen < 3
-        }
-    } else {
-        false
-    }
 }
 
 #[cfg(not(test))]
