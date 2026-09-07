@@ -128,18 +128,45 @@ struct Ipv6WireHeader {
     dst_v6: [u8; 16],
 }
 
+const _: () = assert!(core::mem::size_of::<bpf_timer>() == 16);
+
 impl TimedFwdNatVal {
     #[inline(always)]
     fn new(ext_v4: u32, ext_port: u16, generation: u32, last_seen_ns: u64) -> Self {
-        Self {
-            ext_v4,
-            ext_port,
-            _pad: 0,
-            last_seen_ns,
-            generation,
-            _pad2: 0,
-            observed_last_seen_ns: 0,
-            timer: unsafe { core::mem::zeroed() },
+        let mut value = core::mem::MaybeUninit::<Self>::uninit();
+        let value_ptr = value.as_mut_ptr();
+
+        // Keep timer initialization as fixed-offset stores. Using
+        // core::mem::zeroed() here is lowered to a 16-byte memset-like
+        // subprogram that this kernel's BPF verifier rejects.
+        unsafe {
+            core::ptr::addr_of_mut!((*value_ptr).ext_v4).write(ext_v4);
+            core::ptr::addr_of_mut!((*value_ptr).ext_port).write(ext_port);
+            core::ptr::addr_of_mut!((*value_ptr)._pad).write_volatile(0);
+            core::ptr::addr_of_mut!((*value_ptr).last_seen_ns).write(last_seen_ns);
+            core::ptr::addr_of_mut!((*value_ptr).generation).write(generation);
+            core::ptr::addr_of_mut!((*value_ptr)._pad2).write_volatile(0);
+            core::ptr::addr_of_mut!((*value_ptr).observed_last_seen_ns).write_volatile(0);
+
+            let timer_ptr = core::ptr::addr_of_mut!((*value_ptr).timer).cast::<u8>();
+            timer_ptr.write_volatile(0);
+            timer_ptr.add(1).write_volatile(0);
+            timer_ptr.add(2).write_volatile(0);
+            timer_ptr.add(3).write_volatile(0);
+            timer_ptr.add(4).write_volatile(0);
+            timer_ptr.add(5).write_volatile(0);
+            timer_ptr.add(6).write_volatile(0);
+            timer_ptr.add(7).write_volatile(0);
+            timer_ptr.add(8).write_volatile(0);
+            timer_ptr.add(9).write_volatile(0);
+            timer_ptr.add(10).write_volatile(0);
+            timer_ptr.add(11).write_volatile(0);
+            timer_ptr.add(12).write_volatile(0);
+            timer_ptr.add(13).write_volatile(0);
+            timer_ptr.add(14).write_volatile(0);
+            timer_ptr.add(15).write_volatile(0);
+
+            value.assume_init()
         }
     }
 }
